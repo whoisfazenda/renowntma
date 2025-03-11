@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f0f2f5;
+      margin: 0;
+      padding: 20px;
+      color: #333;
+    }
+    h2 {
+      color: #1a73e8;
+      text-align: center;
+    }
+    .form-container, .releases-container {
+      background: white;
+      padding: 20px;
+      border-radius: 10px;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+      margin-bottom: 20px;
+    }
+    input, select, button {
+      display: block;
+      width: 100%;
+      padding: 10px;
+      margin: 10px 0;
+      border: 1px solid #ddd;
+      border-radius: 5px;
+      box-sizing: border-box;
+    }
+    button {
+      background: #1a73e8;
+      color: white;
+      border: none;
+      cursor: pointer;
+      transition: background 0.3s;
+    }
+    button:hover {
+      background: #1557b0;
+    }
+    .release-item {
+      padding: 10px;
+      border-bottom: 1px solid #eee;
+    }
+    .release-item:last-child {
+      border-bottom: none;
+    }
+    .status-pending { color: #fbbc05; }
+    .status-approved { color: #34a853; }
+    .status-rejected { color: #ea4335; }
+  </style>
+</head>
+<body>
+  <h2>Личный кабинет</h2>
+  <div class="form-container">
+    <input type="text" id="releaseTitle" placeholder="Название релиза" />
+    <input type="text" id="artistName" placeholder="Имя артиста" />
+    <select id="genre">
+      <option value="pop">Поп</option>
+      <option value="rock">Рок</option>
+      <option value="electronic">Электроника</option>
+    </select>
+    <input type="file" id="audioFile" accept=".wav" />
+    <input type="file" id="coverImage" accept="image/jpeg,image/png" />
+    <input type="date" id="releaseDate" />
+    <input type="text" id="lyrics" placeholder="Текст песни (опционально)" />
+    <button onclick="submitRelease()">Отправить на модерацию</button>
+  </div>
+
+  <div class="releases-container">
+    <h2>Ваши релизы</h2>
+    <div id="releases"></div>
+  </div>
+
+  <script>
+    Telegram.WebApp.expand();
+
+    async function validateFiles(audioFile, coverFile) {
+      if (!audioFile.name.endsWith(".wav")) {
+        Telegram.WebApp.showAlert("Только WAV!");
+        return false;
+      }
+      const img = new Image();
+      const imgPromise = new Promise((resolve) => {
+        img.onload = () => resolve({ width: img.width, height: img.height });
+        img.src = URL.createObjectURL(coverFile);
+      });
+      const { width, height } = await imgPromise;
+      if (width !== 3000 || height !== 3000) {
+        Telegram.WebApp.showAlert("Обложка должна быть 3000x3000!");
+        return false;
+      }
+      return true;
+    }
+
+    async function submitRelease() {
+      const audioFile = document.getElementById("audioFile").files[0];
+      const coverFile = document.getElementById("coverImage").files[0];
+      if (!audioFile || !coverFile) {
+        Telegram.WebApp.showAlert("Загрузите аудио и обложку!");
+        return;
+      }
+
+      if (!(await validateFiles(audioFile, coverFile))) return;
+
+      const formData = new FormData();
+      formData.append("userId", Telegram.WebApp.initDataUnsafe.user.id);
+      formData.append("title", document.getElementById("releaseTitle").value);
+      formData.append("artist", document.getElementById("artistName").value);
+      formData.append("genre", document.getElementById("genre").value);
+      formData.append("audio", audioFile);
+      formData.append("cover", coverFile);
+      formData.append("releaseDate", document.getElementById("releaseDate").value);
+      formData.append("lyrics", document.getElementById("lyrics").value);
+
+      fetch("https://your-backend.onrender.com/upload-release", {
+        method: "POST",
+        body: formData,
+      })
+        .then(res => res.json())
+        .then(data => {
+          if (data.success) {
+            Telegram.WebApp.showAlert("Релиз отправлен!");
+            loadReleases();
+          } else {
+            Telegram.WebApp.showAlert("Ошибка: " + data.error);
+          }
+        });
+    }
+
+    function loadReleases() {
+      fetch("https://your-backend.onrender.com/user-releases?userId=" + Telegram.WebApp.initDataUnsafe.user.id)
+        .then(res => res.json())
+        .then(releases => {
+          const container = document.getElementById("releases");
+          container.innerHTML = releases.map(r => `
+            <div class="release-item">
+              <strong>${r.title}</strong> - ${r.artist}<br>
+              Статус: <span class="status-${r.status}">${r.status === "pending" ? "На модерации" : r.status === "approved" ? "Одобрен" : "Отклонён"}</span>
+              ${r.upc ? `<br>UPC: ${r.upc}` : ""}
+            </div>
+          `).join("");
+        });
+    }
+
+    window.onload = loadReleases;
+  </script>
+</body>
+</html>
